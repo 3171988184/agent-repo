@@ -1,0 +1,9 @@
+# 虚拟环境（几百 MB，绝不能推）
+.venv/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 其他
+.DS_Store

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第四步 · 交互版 Agent —— 自主输入指令</title>
+<style>
+  body {
+    font-family: "Microsoft YaHei", -apple-system, sans-serif;
+    line-height: 1.8;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 30px 20px;
+    color: #2c3e50;
+    background: #fafbfc;
+  }
+  h1 { color: #1a73e8; border-bottom: 3px solid #1a73e8; padding-bottom: 10px; }
+  h2 { color: #1a73e8; margin-top: 40px; border-left: 4px solid #1a73e8; padding-left: 10px; }
+  h3 { color: #333; margin-top: 25px; }
+  code {
+    background: #eef1f5; padding: 2px 6px; border-radius: 4px;
+    font-family: Consolas, monospace; font-size: 0.95em; color: #c7254e;
+  }
+  pre {
+    background: #2d2d2d; color: #f8f8f2; padding: 16px 20px;
+    border-radius: 8px; overflow-x: auto; font-size: 0.92em; line-height: 1.6;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  .note {
+    background: #fff8e1; border-left: 4px solid #f9a825;
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 15px 0;
+  }
+  .success {
+    background: #e8f5e9; border-left: 4px solid #43a047;
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 15px 0;
+  }
+  .step-box {
+    background: #fff; border: 1px solid #ddd; border-radius: 8px;
+    padding: 20px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+  th { background: #eef4fb; color: #1a73e8; }
+  .diff-add { background: #e8f5e9; }
+  .diff-del { background: #ffebee; }
+  ul { padding-left: 25px; }
+</style>
+</head>
+<body>
+
+<h1>🛠️ 第四步 · 交互版 Agent</h1>
+<p>目标：把「写死一个任务」改成「启动后自主输入指令，它执行，还能多轮对话」。</p>
+
+<div class="note">
+  <b>一句话总结改动：</b>把 <code>run("任务")</code> 换成 <code>while True + input()</code>，<b>对话历史 <code>messages</code> 提到循环外面</b>，就是交互版了。
+</div>
+
+<h2>0. 原理：v1 和交互版差在哪</h2>
+<table>
+  <tr><th>对比</th><th>v1（当前）</th><th>交互版（目标）</th></tr>
+  <tr><td>任务来源</td><td>写死在 <code>run("帮我算…")</code> 里</td><td>每次 <code>input()</code> 从键盘读取</td></tr>
+  <tr><td>运行次数</td><td>跑一次就退出</td><td><code>while True</code> 一直等你输入，直到说 <code>exit</code></td></tr>
+  <tr><td>对话记忆</td><td><code>messages</code> 在 <code>run()</code> 内部，跑完即丢</td><td><code>messages</code> 提到最外层，<b>跨轮次保留</b>——它记得你前面说过的话</td></tr>
+</table>
+
+<h2>1. 完整代码（复制即用）</h2>
+<p>新建文件 <code>agent_repl.py</code>，内容如下：</p>
+<pre><code># agent_repl.py —— 交互版 Agent：自主输入指令，它执行，可多轮对话
+import json
+import sys
+
+sys.stdout.reconfigure(encoding="utf-8")  # Windows 控制台中文不乱码
+
+from anthropic import Anthropic
+
+client = Anthropic(
+    api_key="sk-d1b7432fc82f43c89dfad538b958ef49",
+    base_url="https://api.deepseek.com/anthropic",
+)
+
+TOOLS = [{
+    "name": "calculator",
+    "description": "执行数学计算，支持 + - * / 和括号，如 '2+3*4'",
+    "input_schema": {
+        "type": "object",
+        "properties": {"expression": {"type": "string"}},
+        "required": ["expression"]
+    }
+}]
+
+def calculator(expression: str) -> str:
+    return str(eval(expression, {"__builtins__": {}}, {}))
+
+
+def chat_loop():
+    # 改动 ①：对话历史提到最外层 —— 跨轮次保留，Agent 才记得你说过的话
+    messages = []
+
+    while True:
+        # 改动 ②：指令从终端输入，不再写死在代码里
+        task = input("\n👤 你> ").strip()
+        # Windows 管道/重定向输入中文时可能出现 surrogate 乱码，清除掉（手动打字不受影响）
+        task = task.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
+        if task in ("exit", "quit", "退出"):   # 改动 ③：退出指令
+            print("👋 再见！")
+            break
+        if not task:
+            continue
+
+        messages.append({"role": "user", "content": task})
+
+        # ===== 内部 Agent 循环（和 v1 完全一样）=====
+        for step in range(20):
+            resp = client.messages.create(
+                model="deepseek-chat",
+                max_tokens=1024,
+                tools=TOOLS,
+                messages=messages,
+            )
+
+            tool_calls = [b for b in resp.content if b.type == "tool_use"]
+
+            if not tool_calls:
+                final = "".join(b.text for b in resp.content if b.type == "text")
+                print(f"💬 完成（{step+1} 步）: {final}")
+                # 关键：模型回答也要存进历史，下一轮它才记得自己说过啥
+                messages.append({"role": "assistant", "content": resp.content})
+                break
+
+            messages.append({"role": "assistant", "content": resp.content})
+
+            results = []
+            for call in tool_calls:
+                print(f"🔧 第 {step+1} 步: 调用 {call.name}({call.input})")
+                try:
+                    result = calculator(**call.input)
+                except Exception as e:
+                    result = f"工具报错: {e}"
+                results.append({
+                    "type": "tool_result",
+                    "tool_use_id": call.id,
+                    "content": json.dumps(result, ensure_ascii=False),
+                })
+            messages.append({"role": "user", "content": results})
+        else:
+            print("⚠️ 超过最大步数，停止。")
+
+
+if __name__ == "__main__":
+    print("🛠️ 小助手已启动：输入指令让它干活，输入 exit 退出")
+    chat_loop()
+</code></pre>
+
+<h2>2. 运行方法</h2>
+<div class="step-box">
+  <p><b>① 激活虚拟环境</b>（每次开新终端都要做）：</p>
+  <pre><code>.venv\Scripts\activate</code></pre>
+  <p><b>② 运行：</b></p>
+  <pre><code>python agent_repl.py</code></pre>
+  <p><b>③ 看到提示符后输入指令：</b></p>
+  <pre><code>🛠️ 小助手已启动：输入指令让它干活，输入 exit 退出
+
+👤 你> 帮我算一下 17 的 5 次方减去 233，然后再乘以 0.618
+🔧 第 1 步: 调用 calculator({'expression': '17*17*17*17*17'})
+🔧 第 2 步: 调用 calculator({'expression': '1419857-233'})
+🔧 第 3 步: 调用 calculator({'expression': '1419624*0.618'})
+💬 完成（4 步）: 最终结果是 877327.632
+
+👤 你> 那如果换成 6 的 3 次方呢？
+💬 完成（1 步）: 6³ = 216
+
+👤 你> exit
+👋 再见！</code></pre>
+  <p>注意 <b>多轮记忆</b>：第二句「换成 6 的 3 次方」它知道是接着上一个任务算的，因为 <code>messages</code> 还在。</p>
+</div>
+
+<h2>3. 和 v1 的代码对比（只看改动）</h2>
+<table>
+  <tr><th>v1</th><th>交互版</th></tr>
+  <tr>
+    <td class="diff-del"><code>def run(task):<br>&nbsp;&nbsp;messages = [{"role":"user","content": task}]</code></td>
+    <td class="diff-add"><code>def chat_loop():<br>&nbsp;&nbsp;messages = []  ← 外层</code></td>
+  </tr>
+  <tr>
+    <td class="diff-del"><code># 没有循环，跑一次结束</code></td>
+    <td class="diff-add"><code>while True:<br>&nbsp;&nbsp;task = input("👤 你> ")<br>&nbsp;&nbsp;if task == "exit": break<br>&nbsp;&nbsp;messages.append({"role":"user","content":task})<br>&nbsp;&nbsp;# ...内部循环照旧...</code></td>
+  </tr>
+  <tr>
+    <td class="diff-del"><code># 完成后直接 return 退出</code></td>
+    <td class="diff-add"><code># 完成后 messages.append(assistant 回答) —— 存进历史</code></td>
+  </tr>
+</table>
+
+<h3>3 个关键改动</h3>
+<ol>
+  <li><b><code>messages</code> 提到外层</b> —— 这是记忆的核心。每轮对话结束，把模型回答也 <code>append</code> 进历史，下一轮它才能「记得」。</li>
+  <li><b><code>while True + input()</code></b> —— 从键盘读指令，不再写死。</li>
+  <li><b><code>exit</code> 退出</b> —— 用 break 跳出外层循环。</li>
+</ol>
+
+<h2>4. 常见报错排查</h2>
+<table>
+  <tr><th>现象</th><th>原因</th><th>解决</th></tr>
+  <tr><td>中文输入报 <code>surrogates not allowed</code></td><td>Windows 管道/重定向输入编码问题</td><td>正常手动打字不受影响；代码里已加清洗</td></tr>
+  <tr><td>没反应 / 卡住</td><td>网络慢或 API 超时</td><td>检查网络，重试</td></tr>
+  <tr><td>报错 <code>messages: ended with tool_use</code></td><td>assistant 消息没存整段 content</td><td>检查 <code>messages.append({"role":"assistant","content": resp.content})</code> 是否完整</td></tr>
+  <tr><td>中文乱码</td><td>控制台编码</td><td>第一行加 <code>sys.stdout.reconfigure(encoding="utf-8")</code>；或 <code>chcp 65001</code></td></tr>
+</table>
+
+<h2>5. 接下来怎么升级</h2>
+<ul>
+  <li><b>v2 · 会查资料</b>：在 <code>TOOLS</code> 里加 <code>web_search</code> / <code>web_fetch</code> 工具，循环零改动（教程第 5 节）</li>
+  <li><b>v3 · 会规划</b>：加一个 <code>SYSTEM_PROMPT</code> 引导它先拆步骤（教程第 6 节）</li>
+  <li><b>v4 · 会干活</b>：加 <code>read_file</code> / <code>write_file</code>，沙箱限制在 workspace 目录（教程第 7 节）</li>
+</ul>
+
+<div class="success">
+  ✅ 至此你已跑通交互版 Agent：自主输入指令 → 它调工具 → 回填结果 → 多轮对话。这就是 Claude Code 的雏形！
+</div>
+
+</body>
+</html>
