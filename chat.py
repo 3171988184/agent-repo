@@ -13,9 +13,8 @@ if USE_ANTHROPIC:
     from anthropic import Anthropic
 
     client = Anthropic(
-        api_key="sk-d1b7432fc82f43c89dfad538b958ef49",   # 你的 DeepSeek key
-        # DeepSeek 的 Anthropic 兼容端点；若用官方 Claude，删掉这行即可
-        base_url="https://api.deepseek.com/anthropic",
+    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),   # ← 从环境变量读，不留默认值
+    base_url="https://api.deepseek.com/anthropic",
     )
 
     resp = client.messages.create(
@@ -29,7 +28,7 @@ else:
     from openai import OpenAI
 
     client = OpenAI(
-        api_key="sk-d1b7432fc82f43c89dfad538b958ef49",   # 你的 DeepSeek key
+        api_key=os.environ.get("DEEPSEEK_API_KEY", ""),   # ← 从环境变量读，不留默认值
         base_url="https://api.deepseek.com",
     )
 

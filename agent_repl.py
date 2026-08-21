@@ -12,10 +12,9 @@ from anthropic import Anthropic
 import requests
 from bs4 import BeautifulSoup
 client = Anthropic(
-    api_key="sk-d1b7432fc82f43c89dfad538b958ef49",
+    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),   # ← 从环境变量读，不留默认值
     base_url="https://api.deepseek.com/anthropic",
 )
-
 
 # 强化版系统提示词（这就是"规划"的开关）
 SYSTEM_PROMPT = """你是"小助手"，一个能自己干活的研究助理。

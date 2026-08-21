@@ -16,7 +16,7 @@ from anthropic import Anthropic
 # 用 DeepSeek 的 Anthropic 兼容端点（国内可直连）；
 # 若用官方 Claude，删掉 base_url 并把模型名换成 claude-sonnet-4-6 即可。
 client = Anthropic(
-    api_key="sk-d1b7432fc82f43c89dfad538b958ef49",
+    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),   # ← 从环境变量读，不留默认值
     base_url="https://api.deepseek.com/anthropic",
 )
 

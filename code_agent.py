@@ -9,12 +9,12 @@ from anthropic import Anthropic
 
 PROJECT_ROOT = r"C:\Code\Android"        # ← 改成你的工程路径
 
-# ===== 0. 客户端（你原来漏了这行！） =====
+# ===== 0. 客户端（API key 从环境变量读，别硬编码进代码） =====
+# 换电脑/换 key 只需设置环境变量 DEEPSEEK_API_KEY，不用改代码
 client = Anthropic(
-    api_key="sk-d1b7432fc82f43c89dfad538b958ef49",
-    base_url="https://api.deepseek.com/anthropic",   # DeepSeek 的 Anthropic 兼容端点
+    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),   # ← 从环境变量读，不留默认值
+    base_url="https://api.deepseek.com/anthropic",
 )
-
 # ===== ① 工具实现 =====
 
 def glob_files(pattern: str, root: str = PROJECT_ROOT) -> str:
